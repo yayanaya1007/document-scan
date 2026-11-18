@@ -1,3 +1,34 @@
+// A short title underline rarely crosses enough of the page to qualify as a
+// table rule. Trace it independently, then translate each column of the title
+// as a unit so its letter height survives the correction.
+function titleGuide(data,w,h){
+  if(w<160 || h<200)return null;
+  const x0=Math.round(.35*w),x1=Math.round(.65*w),step=Math.max(3,Math.round(w/90));
+  const ridge=(x,y)=>(data[4*((y-2)*w+x)+1]+data[4*((y+2)*w+x)+1])/2-data[4*(y*w+x)+1];
+  let best=null;
+  for(let y=Math.floor(.055*h);y<.22*h;y++){
+    for(let slope=-.06;slope<=.061;slope+=.01){
+      let count=0,sum=0,n=0;
+      for(let x=x0;x<=x1;x+=step){
+        const row=Math.round(y+(x-w/2)*slope);
+        const v=ridge(x,row);
+        count+=v>12;sum+=Math.min(75,Math.max(0,v));n++;
+      }
+      if(count<n*.78 || (best && sum<=best.sum))continue;
+      // Exclude wide table borders by checking both sides of the heading.
+      let outside=0,total=0;
+      for(let x=Math.round(.12*w);x<.88*w;x+=step){
+        if(x>.27*w && x<.73*w)continue;
+        outside+=ridge(x,Math.round(y+(x-w/2)*slope))>10;total++;
+      }
+      if(outside<total*.25)best={y,slope,sum};
+    }
+  }
+  if(!best)return null;
+  // A single shear keeps a straight underline straight even where a letter
+  // touches it. Per-column peaks there would copy letter strokes into the warp.
+  return {row:best.y,shift:x=>(x-w/2)*best.slope};
+}
 function rectifyRules(pixels,w,h,sample=(x,y,out,i)=>samplePhoto(pixels,w,h,x,y,out,i)){
   // Follow continuous dark ridges from the middle toward both ends of each axis.
   function trace(vertical){
@@ -103,19 +134,22 @@ function rectifyRules(pixels,w,h,sample=(x,y,out,i)=>samplePhoto(pixels,w,h,x,y,
       if(change<.002)break;
     }
   }
+  const title=titleGuide(pixels,w,h);
   const output=new Uint8ClampedArray(pixels.length);
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const gx=x*(nx-1)/(w-1),gy=y*(ny-1)/(h-1),i=Math.min(nx-2,Math.floor(gx)),j=Math.min(ny-2,Math.floor(gy)),n=j*nx+i;
     const fx=gx-i,fy=gy-j;
     const offset=f=>(1-fy)*((1-fx)*f[n]+fx*f[n+1])+fy*((1-fx)*f[n+nx]+fx*f[n+nx+1]);
-    const sx=x+offset(dx),sy=y+offset(dy);
+        const blend=title?Math.max(0,Math.min(1,(y-title.row+h*.065)/(h*.026),(title.row+h*.009-y)/(h*.008))):0;
+    const sx=x+(1-blend)*offset(dx);
+    const sy=y+(1-blend)*offset(dy)+(blend?blend*title.shift(x):0);
     const index=4*(y*w+x);
     // Give the physical page a clean rectangular margin without pulling on text.
     if(sx<left[y]+1 || sx>w-2-right[y] || sy<top[x]+1 || sy>h-2-bottom[x]){
       output.fill(255,index,index+4);
     }else sample(sx,sy,output,index);
   }
-  return alignTableSides(straightenFooter(evenPaperLight(output,w,h),w,h),w,h);
+  return levelTitleUnderline(alignTableSides(straightenFooter(evenPaperLight(output,w,h),w,h),w,h),w,h);
 }
 function samplePhoto(data,w,h,x,y,out,index){
   x=Math.max(0,Math.min(w-1,x));y=Math.max(0,Math.min(h-1,y));
@@ -385,4 +419,35 @@ function splitTouchingSheets(corners, data, w, h) {
     return [x,ys.length?ys.sort((a,b)=>a-b)[Math.floor(ys.length/2)]:(lower?bottom:top)];
   }
   return [[tl,corner(-1,false),corner(-1,true),bl],[corner(1,false),tr,br,corner(1,true)]];
+}
+
+function levelTitleUnderline(src,w,h){
+  const guide=titleGuide(src,w,h);
+  if(!guide)return src;
+  const target=guide.row, span=Math.max(9,Math.round(w*.025));
+  const left=Math.floor(.34*w),right=Math.ceil(.66*w),shifts=[];
+  for(let x=left;x<=right;x++){
+    const expected=target+guide.shift(x),base=Math.round(expected);
+    let sum=0,weight=0;
+    for(let k=x-span;k<=x+span;k++){
+      // Use the lowest continuous stroke. The title is printed above its rule.
+      let moment=0,mass=0;
+      for(let y=base-2;y<=base+2;y++){
+        const ink=Math.max(0,src[((base+4)*w+k)*4+1]-src[(y*w+k)*4+1]-12);
+        moment+=ink*y;mass+=ink;
+      }
+      if(mass>16){sum+=moment/mass;weight++}
+    }
+    shifts.push((weight>span?sum/weight:expected)-target);
+  }
+  const dst=src.slice(),height=Math.max(12,Math.round(.043*h));
+  for(let y=Math.max(0,target-height*2);y<=Math.min(h-1,target+7);y++){
+    const blend=Math.max(0,Math.min(1,(y-target+height*2)/height,(target+7-y)/6));
+    for(let x=Math.floor(.25*w);x<.75*w;x++){
+      const fade=Math.max(0,1-Math.max(left-x,x-right,0)/(.09*w));
+      const shift=shifts[Math.max(0,Math.min(right-left,x-left))]*blend*fade;
+      if(Math.abs(shift)>.06)samplePhoto(src,w,h,x,y+shift,dst,4*(y*w+x));
+    }
+  }
+  return dst;
 }
