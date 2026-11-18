@@ -11,4 +11,3 @@ window.neuralDewarp=async function(canvas){
  for(let y=0;y<H;y++){let gy=y*(gh-1)/(H-1),y0=Math.floor(gy),y1=Math.min(gh-1,y0+1),fy=gy-y0;for(let x=0;x<W;x++){let gx=x*(gw-1)/(W-1),x0=Math.floor(gx),x1=Math.min(gw-1,x0+1),fx=gx-x0;const sample=c=>{let a=grid[c*gn+y0*gw+x0]*(1-fx)+grid[c*gn+y0*gw+x1]*fx,b=grid[c*gn+y1*gw+x0]*(1-fx)+grid[c*gn+y1*gw+x1]*fx;return a*(1-fy)+b*fy};let sx=(sample(0)+1)*(W-1)/2,sy=(sample(1)+1)*(H-1)/2,di=(y*W+x)*4;if(sx<0||sy<0||sx>W-1||sy>H-1){out.data[di]=out.data[di+1]=out.data[di+2]=255;out.data[di+3]=255;continue}let ix=Math.floor(sx),iy=Math.floor(sy),ix1=Math.min(W-1,ix+1),iy1=Math.min(H-1,iy+1),dx=sx-ix,dy=sy-iy;for(let k=0;k<3;k++){let a=src.data[(iy*W+ix)*4+k]*(1-dx)+src.data[(iy*W+ix1)*4+k]*dx,b=src.data[(iy1*W+ix)*4+k]*(1-dx)+src.data[(iy1*W+ix1)*4+k]*dx;out.data[di+k]=a*(1-dy)+b*dy}out.data[di+3]=255}}
  ctx.putImageData(out,0,0);
 };
-
