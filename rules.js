@@ -339,3 +339,50 @@ function alignTableSides(src,w,h){
   }
   return dst;
 }
+
+// Two touching sheets can form a single connected paper mask. Find a continuous
+// crease with desk visible in the gap, then measure each sheet beside that gap.
+function splitTouchingSheets(corners, data, w, h) {
+  const [tl,tr,br,bl]=corners;
+  const top=Math.max(tl[1],tr[1]), bottom=Math.min(bl[1],br[1]);
+  const left=Math.max(tl[0],bl[0]), right=Math.min(tr[0],br[0]);
+  const width=right-left,height=bottom-top;
+  if(height<60 || width<height*1.12)return null;
+  const tone=(x,y)=>data[(y*w+x)*4+1];
+  const colored=(x,y)=>{const i=(y*w+x)*4;return data[i]-data[i+2]>42};
+  let best=null;
+  for(let x=Math.round(left+width*.34);x<=right-width*.34;x++){
+    let hits=0,gaps=0,total=0,score=0;
+    for(let y=top+4;y<bottom-4;y+=3){
+      let strength=0,desk=false;
+      for(let k=x-2;k<=x+2;k++){
+        strength=Math.max(strength,Math.min(tone(x-7,y),tone(x+7,y))-tone(k,y));
+        desk ||= colored(k,y);
+      }
+      if(strength>10)hits++;
+      if(desk)gaps++;
+      score+=Math.min(60,strength);total++;
+    }
+    if(hits>.72*total && gaps>.08*total && (!best || score>best.score))best={x,score};
+  }
+  if(!best)return null;
+  function corner(direction,lower){
+    const xs=[],ys=[];
+    for(let y=(lower?bottom:top)+(lower?-4:4);lower?y>bottom-18:y<top+18;y+=lower?-1:1){
+      let x=best.x;
+      for(let k=best.x-4;k<=best.x+4;k++)if(tone(k,y)<tone(x,y))x=k;
+      while(Math.abs(x-best.x)<9 && (colored(x,y)||tone(x,y)<(tone(best.x+direction*12,y)-18)))x+=direction;
+      xs.push(x);
+    }
+    const x=xs.sort((a,b)=>a-b)[Math.floor(xs.length/2)];
+    for(let n=3;n<=13;n++){
+      const col=x+n*direction;
+      const start=lower?Math.min(h-1,bottom+Math.round(.07*h)):Math.max(0,top-Math.round(.07*h));
+      for(let y=start;lower?y>=bottom-.08*h:y<=top+.08*h;y+=lower?-1:1){
+        if(!colored(col,y)&&tone(col,y)>105){ys.push(y);break}
+      }
+    }
+    return [x,ys.length?ys.sort((a,b)=>a-b)[Math.floor(ys.length/2)]:(lower?bottom:top)];
+  }
+  return [[tl,corner(-1,false),corner(-1,true),bl],[corner(1,false),tr,br,corner(1,true)]];
+}
